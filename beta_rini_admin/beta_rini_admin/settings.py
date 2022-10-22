@@ -10,7 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+from datetime import timedelta
+load_dotenv()
+
+MODE = os.getenv('MODE')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,10 +29,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-)+j=48me$c#u7dqs%)#f*^9a&9da^k0vwl15@o)q$jv=6#j(3@'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False if MODE == 'PRODUCTION' else True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
+# DJANGO CORS HEADER
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Application definition
 
@@ -37,11 +45,19 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'django_db_logger',
+    'django_password_validators',
+    'django_password_validators.password_history',
+    'beta_rini_api',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -54,7 +70,7 @@ ROOT_URLCONF = 'beta_rini_admin.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -75,8 +91,16 @@ WSGI_APPLICATION = 'beta_rini_admin.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            'use_unicode': True
+        },
+        'PORT': os.getenv('DB_PORT')
     }
 }
 
@@ -97,15 +121,120 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        'NAME': 'django_password_validators.password_history.password_validation.UniquePasswordsValidator',
+        'OPTIONS': {
+             # How many recently entered passwords matter.
+             # Passwords out of range are deleted.
+             # Default: 0 - All passwords entered by the user. All password hashes are stored.
+            'last_passwords': 5 # Only the last 5 passwords entered by the user
+        }
+    },
+    {
+        'NAME': 'django_password_validators.password_character_requirements.password_validation.PasswordCharacterValidator',
+        'OPTIONS': {
+             'min_length_digit': 1,
+             'min_length_alpha': 2,
+             'min_length_special': 3,
+             'min_length_lower': 4,
+             'min_length_upper': 5,
+             'special_characters': "~!@#$%^&*()_+{}\":;'[]"
+         }
+    },
 ]
 
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend'
+]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly',
+    ]
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{name} {levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+        'custom': {
+            'format': '%(name)-12s %(levelname)-8s %(message)s'
+        }
+    },
+    'filters': {
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'filters': ['require_debug_true'],
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose'
+        },
+        'db_log': {
+            'level': 'INFO',
+            'class': 'django_db_logger.db_log_handler.DatabaseLogHandler'
+        },
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'betarini.log'),
+            'maxBytes': 20 * 1024 * 1024,  # 20 MB
+            'backupCount': 10,  # keep at most 10 log files
+            'formatter': 'verbose'
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'propagate': True,
+        },
+        'db': {
+            'handlers': ['db_log', 'console'],
+            'level': 'DEBUG'
+        },
+        'django.request': {
+            'handlers': ['db_log'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'betarini.custom': {
+            'handlers': ['console', 'file', 'db_log'],
+            'level': 'DEBUG'
+        },
+    }
+}
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# SIMPLE JWT
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'SIGNING_KEY': SECRET_KEY,
+    'UPDATE_LAST_LOGIN': True
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/3.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Bangkok'
 
 USE_I18N = True
 

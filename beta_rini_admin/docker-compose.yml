@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  betarini-db:
+    image: mysql:5.7.26
+    restart: always
+    container_name: betarini-db
+    environment:
+      MYSQL_DATABASE: 'betarini'
+      MYSQL_USER: 'root'
+      MYSQL_PASSWORD: 'admin'
+      MYSQL_ROOT_PASSWORD: 'admin'
+    ports:
+      - '3302:3306'
+    expose:
+      - '3306'
+    volumes:
+      - my-db:/var/lib/mysql
+    command: [ mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --wait_timeout=28800, --max_allowed_packet=500000000 ]
+  
+  betarini-app:
+    container_name: betarini-app
+    build: .
+    restart: always
+    shm_size: '2gb'
+    command: python ./manage.py runserver 0.0.0.0:6001
+    volumes:
+      - .:/code
+    ports:
+      - '6001:6001'
+    depends_on:
+      - betarini-db
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+        max-file: '3'
+
+volumes:
+  my-db:
